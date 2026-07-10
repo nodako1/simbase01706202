@@ -39,30 +39,24 @@ jobs:
       - name: Type-check and build web app
         run: npm run build
 
-      - name: Generate vertical MP4
+      - name: Generate titled vertical MP4
+        run: npm run generate:video
+
+      - name: Verify completed video output
         shell: bash
         run: |
-          set -o pipefail
-          npm run generate:video 2>&1 | tee video-generation.log
+          mapfile -t files < <(find output -maxdepth 1 -type f -printf '%f\n')
+          if [ "${#files[@]}" -ne 1 ] || [[ "${files[0]}" != *.mp4 ]]; then
+            printf 'Expected exactly one MP4, found:\n'
+            printf '%s\n' "${files[@]}"
+            exit 1
+          fi
+          ls -lh "output/${files[0]}"
 
-      - name: Upload generation diagnostics
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: video-generation-diagnostics-${{ github.run_number }}
-          path: video-generation.log
-          if-no-files-found: error
-          retention-days: 3
-
-      - name: Show generated files
-        run: ls -lh output
-
-      - name: Upload generated video
+      - name: Upload completed video
         uses: actions/upload-artifact@v4
         with:
           name: sim-base-video-${{ github.run_number }}
-          path: |
-            output/*.mp4
-            output/*.json
+          path: output/*.mp4
           if-no-files-found: error
           retention-days: 14
