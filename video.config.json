@@ -1,0 +1,32 @@
+{
+  "scenario": {
+    "title": "100人を沈む島に放ったらどうなる？",
+    "worldWidth": 100,
+    "worldHeight": 100,
+    "population": 100,
+    "teams": 4,
+    "foodCount": 80,
+    "simulationTicks": 1200,
+    "ticksPerSecond": 20,
+    "playbackSpeed": 4,
+    "hungerDrainPerTick": 0.12,
+    "foodRestore": 44,
+    "moveSpeed": 0.72,
+    "visionRange": 30,
+    "specialRule": "sinking_island",
+    "winCondition": "most_survivors",
+    "seed": 20260711
+  },
+  "video": {
+    "durationSeconds": 30,
+    "introSeconds": 2,
+    "resultSeconds": 3,
+    "sourceFps": 15,
+    "outputFps": 30,
+    "renderWidth": 540,
+    "renderHeight": 960,
+    "finalWidth": 1080,
+    "finalHeight": 1920,
+    "fileName": "sim-base.mp4"
+  }
+}
