@@ -25,6 +25,7 @@
     "renderWidth": 540,
     "renderHeight": 960,
     "finalWidth": 1080,
-    "finalHeight": 1920
+    "finalHeight": 1920,
+    "selectionAttempts": 6
   }
 }
