@@ -5,7 +5,7 @@
     "population": 100,
     "teams": 4,
     "foodCount": 80,
-    "simulationTicks": 1200,
+    "simulationTicks": 1000,
     "ticksPerSecond": 20,
     "playbackSpeed": 4,
     "hungerDrainPerTick": 0.12,
