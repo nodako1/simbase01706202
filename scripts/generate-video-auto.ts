@@ -28,7 +28,7 @@ function buildVideoTitle(input: Partial<SimulationConfig>): string {
   if (specialRule === 'sinking_island') {
     candidates.push(
       `沈む島で${population}人が戦った結果…`,
-      `英雄${teams}人と${population}人、沈む島の結末`,
+      `${population}人の中に英雄${teams}人、沈む島の結末`,
       `逃げ場ゼロの島で最後に残るのは？`,
     );
   } else if (foodRatio <= 0.3) {
