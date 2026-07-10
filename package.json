@@ -1,13 +1,14 @@
 {
   "name": "sim-base",
   "private": true,
-  "version": "0.3.0",
+  "version": "1.0.0-space",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "generate:video": "tsx scripts/generate-video-auto.ts",
+    "generate:video": "tsx scripts/generate-space-video-entry.ts",
+    "generate:video:survival": "tsx scripts/generate-video-auto.ts",
     "generate:video:core": "tsx scripts/generate-video.ts"
   },
   "devDependencies": {
