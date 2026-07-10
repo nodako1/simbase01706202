@@ -1,14 +1,17 @@
 {
   "name": "sim-base",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "generate:video": "tsx scripts/generate-video.ts"
   },
   "devDependencies": {
+    "@napi-rs/canvas": "^0.1.80",
+    "tsx": "^4.20.3",
     "typescript": "^5.8.3",
     "vite": "^6.3.5"
   }
