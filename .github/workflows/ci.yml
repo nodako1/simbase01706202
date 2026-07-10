@@ -45,6 +45,15 @@ jobs:
           set -o pipefail
           npm run generate:video 2>&1 | tee video-generation.log
 
+      - name: Upload generation diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-generation-diagnostics-${{ github.run_number }}
+          path: video-generation.log
+          if-no-files-found: error
+          retention-days: 3
+
       - name: Show generated files
         run: ls -lh output
 
