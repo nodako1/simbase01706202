@@ -30,17 +30,20 @@ jobs:
 
       - name: Install FFmpeg and Japanese fonts
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg fonts-noto-cjk
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fonts-noto-cjk >/dev/null
 
       - name: Install dependencies
-        run: npm install
+        run: npm install --silent
 
       - name: Type-check and build web app
         run: npm run build
 
       - name: Generate vertical MP4
-        run: npm run generate:video
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run generate:video 2>&1 | tee video-generation.log
 
       - name: Show generated files
         run: ls -lh output
