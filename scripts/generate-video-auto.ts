@@ -27,27 +27,27 @@ function buildVideoTitle(input: Partial<SimulationConfig>): string {
 
   if (specialRule === 'sinking_island') {
     candidates.push(
-      `${population}人を沈み続ける島に放置した結果…`,
-      `逃げ場が消える島で${population}人は何人生き残る？`,
-      `島が沈み続けたら${population}人は全滅するのか？`,
+      `${population}人を沈む島に放置した結果…`,
+      `沈む島で${population}人は何人生き残る？`,
+      `島が沈んだら${population}人は全滅する？`,
     );
   } else if (foodRatio <= 0.3) {
     candidates.push(
       `${population}人に食料${foodCount}個だけ与えた結果…`,
-      `食料${foodCount}個を${population}人で奪い合ったらどうなる？`,
-      `${population}人vs食料${foodCount}個、最後に残るのは？`,
+      `食料${foodCount}個を${population}人で奪い合うと？`,
+      `${population}人vs食料${foodCount}個、生き残るのは？`,
     );
   } else if (teams >= 2) {
     candidates.push(
-      `${population}人を${teams}チームに分けて生存競争させた結果…`,
-      `${teams}チーム${population}人、最後まで生き残るのはどこ？`,
-      `${population}人のサバイバル、最強チームが決まる瞬間`,
+      `${population}人を${teams}チームに分けた結果…`,
+      `${teams}チーム${population}人、生き残るのは？`,
+      `${population}人のサバイバル、最強チーム決定`,
     );
   } else {
     candidates.push(
       `${population}人を小さな世界に放置した結果…`,
-      `${population}人だけの世界で最後まで生き残るのは？`,
-      `食料を求める${population}人、最後に待っていた結末`,
+      `${population}人だけの世界、生き残るのは？`,
+      `食料を求める${population}人、最後の結末`,
     );
   }
 
@@ -100,7 +100,7 @@ async function main(): Promise<void> {
   process.env.SIM_BASE_VIDEO_CONFIG = generatedConfigPath;
 
   try {
-    await import('./generate-video.ts');
+    await import('./generate-video-quality.ts');
 
     const temporaryVideoPath = join(outputDir, temporaryFileName);
     const finalVideoPath = join(outputDir, finalFileName);
