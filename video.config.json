@@ -1,6 +1,5 @@
 {
   "scenario": {
-    "title": "100人を沈む島に放ったらどうなる？",
     "worldWidth": 100,
     "worldHeight": 100,
     "population": 100,
@@ -26,7 +25,6 @@
     "renderWidth": 540,
     "renderHeight": 960,
     "finalWidth": 1080,
-    "finalHeight": 1920,
-    "fileName": "sim-base.mp4"
+    "finalHeight": 1920
   }
 }
