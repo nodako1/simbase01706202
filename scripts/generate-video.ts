@@ -364,7 +364,10 @@ async function main(): Promise<void> {
 
     if (frame >= introFrames && frame < introFrames + simulationFrames) {
       phase = 'simulation';
-      if (snapshot.status === 'idle') simulation.start();
+      if (snapshot.status === 'idle') {
+        simulation.start();
+        snapshot = simulation.getSnapshot();
+      }
       const simulationFrame = frame - introFrames + 1;
       const targetTick = Math.min(
         config.simulationTicks,
@@ -376,7 +379,10 @@ async function main(): Promise<void> {
       }
     } else if (frame >= introFrames + simulationFrames) {
       phase = 'result';
-      if (snapshot.status === 'idle') simulation.start();
+      if (snapshot.status === 'idle') {
+        simulation.start();
+        snapshot = simulation.getSnapshot();
+      }
       while (snapshot.status === 'running') {
         simulation.step();
         snapshot = simulation.getSnapshot();
