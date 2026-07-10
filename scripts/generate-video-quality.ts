@@ -6,7 +6,7 @@ import { createCanvas } from '@napi-rs/canvas';
 import { sanitizeConfig } from '../src/config';
 import type { SimulationConfig, SimulationSnapshot } from '../src/types';
 import { AutoDirector } from './quality/director';
-import { QualityRenderer } from './quality/renderer';
+import { DramaRenderer } from './quality/drama-renderer';
 import { buildPlaybackTicks, findSnapshot, selectBestTimeline } from './quality/timeline';
 import type { Phase, VideoSettings } from './quality/types';
 
@@ -37,7 +37,7 @@ async function main(): Promise<void> {
   console.log(`Selected seed=${config.seed}, dramaScore=${selection.score.toFixed(1)}, moments=${timeline.moments.length}`);
 
   const canvas = createCanvas(video.renderWidth, video.renderHeight);
-  const renderer = new QualityRenderer(canvas.getContext('2d'), video.renderWidth, video.renderHeight, config);
+  const renderer = new DramaRenderer(canvas.getContext('2d'), video.renderWidth, video.renderHeight, config);
   const director = new AutoDirector(timeline.moments, video.sourceFps, config);
   const totalFrames = Math.round(video.durationSeconds * video.sourceFps);
   const introFrames = Math.round(video.introSeconds * video.sourceFps);
@@ -71,27 +71,11 @@ async function main(): Promise<void> {
   const safeFileName = sanitizeFileName(video.fileName);
   const outputPath = join(outputDir, safeFileName);
   const ffmpeg = spawnSync('ffmpeg', [
-    '-y',
-    '-hide_banner',
-    '-loglevel',
-    'warning',
-    '-framerate',
-    String(video.sourceFps),
-    '-i',
-    join(framesDir, 'frame-%05d.png'),
-    '-vf',
-    `scale=${video.finalWidth}:${video.finalHeight}:flags=lanczos,fps=${video.outputFps},format=yuv420p`,
-    '-c:v',
-    'libx264',
-    '-preset',
-    'medium',
-    '-crf',
-    '19',
-    '-movflags',
-    '+faststart',
-    '-metadata',
-    `title=${config.title}`,
-    outputPath,
+    '-y', '-hide_banner', '-loglevel', 'warning', '-framerate', String(video.sourceFps),
+    '-i', join(framesDir, 'frame-%05d.png'),
+    '-vf', `scale=${video.finalWidth}:${video.finalHeight}:flags=lanczos,fps=${video.outputFps},format=yuv420p`,
+    '-c:v', 'libx264', '-preset', 'medium', '-crf', '19', '-movflags', '+faststart',
+    '-metadata', `title=${config.title}`, outputPath,
   ], { stdio: 'inherit' });
   if (ffmpeg.error) throw ffmpeg.error;
   if (ffmpeg.status !== 0) throw new Error(`FFmpeg exited with status ${ffmpeg.status}`);
@@ -143,13 +127,7 @@ function sanitizeFileName(fileName: string): string {
   const normalized = fileName.replace(/[^a-zA-Z0-9._-]/g, '-');
   return normalized.toLowerCase().endsWith('.mp4') ? normalized : `${normalized}.mp4`;
 }
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, Number(value)));
-}
-
-function clampInt(value: number, min: number, max: number): number {
-  return Math.round(clamp(value, min, max));
-}
+function clamp(value: number, min: number, max: number): number { return Math.min(max, Math.max(min, Number(value))); }
+function clampInt(value: number, min: number, max: number): number { return Math.round(clamp(value, min, max)); }
 
 await main();
