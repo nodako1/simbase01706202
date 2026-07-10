@@ -7,7 +7,7 @@ import { sanitizeConfig } from '../src/config';
 import type { SimulationConfig, SimulationSnapshot } from '../src/types';
 import { AutoDirector } from './quality/director';
 import { QualityRenderer } from './quality/renderer';
-import { buildPlaybackTicks, buildTimeline, findSnapshot } from './quality/timeline';
+import { buildPlaybackTicks, findSnapshot, selectBestTimeline } from './quality/timeline';
 import type { Phase, VideoSettings } from './quality/types';
 
 type VideoJob = { scenario?: Partial<SimulationConfig>; video?: VideoSettings };
@@ -21,14 +21,20 @@ async function main(): Promise<void> {
 
   const job = JSON.parse(readFileSync(configPath, 'utf8')) as VideoJob;
   const video = normalize(job.video ?? {});
-  const config = sanitizeConfig({ ...job.scenario, videoWidth: video.renderWidth, videoHeight: video.renderHeight, framesPerSecond: video.sourceFps });
+  const baseConfig = sanitizeConfig({
+    ...job.scenario,
+    videoWidth: video.renderWidth,
+    videoHeight: video.renderHeight,
+    framesPerSecond: video.sourceFps,
+  });
   mkdirSync(outputDir, { recursive: true });
   rmSync(framesDir, { recursive: true, force: true });
   mkdirSync(framesDir, { recursive: true });
 
-  console.log('Pre-simulating world and detecting dramatic moments...');
-  const timeline = buildTimeline(config);
-  console.log(`Timeline ready: ${timeline.finalTick} ticks, ${timeline.moments.length} highlighted moments`);
+  console.log(`Running ${video.selectionAttempts} candidate worlds and selecting the strongest story...`);
+  const selection = selectBestTimeline(baseConfig, video.selectionAttempts);
+  const { timeline, config } = selection;
+  console.log(`Selected seed=${config.seed}, dramaScore=${selection.score.toFixed(1)}, moments=${timeline.moments.length}`);
 
   const canvas = createCanvas(video.renderWidth, video.renderHeight);
   const renderer = new QualityRenderer(canvas.getContext('2d'), video.renderWidth, video.renderHeight, config);
@@ -46,32 +52,68 @@ async function main(): Promise<void> {
     let phase: Phase;
     let snapshot: SimulationSnapshot;
     if (frame < introFrames) {
-      phase = 'intro'; snapshot = initialSnapshot;
+      phase = 'intro';
+      snapshot = initialSnapshot;
     } else if (frame < introFrames + simulationFrames) {
-      phase = 'simulation'; snapshot = findSnapshot(timeline.snapshots, playbackTicks[frame - introFrames]);
+      phase = 'simulation';
+      snapshot = findSnapshot(timeline.snapshots, playbackTicks[frame - introFrames]);
     } else {
-      phase = 'result'; snapshot = finalSnapshot;
+      phase = 'result';
+      snapshot = finalSnapshot;
     }
     renderer.render(snapshot, phase, director.update(snapshot, phase));
     writeFileSync(join(framesDir, `frame-${String(frame).padStart(5, '0')}.png`), await canvas.encode('png'));
-    if ((frame + 1) % Math.max(1, Math.floor(totalFrames / 10)) === 0 || frame === totalFrames - 1) console.log(`Frames: ${frame + 1}/${totalFrames}`);
+    if ((frame + 1) % Math.max(1, Math.floor(totalFrames / 10)) === 0 || frame === totalFrames - 1) {
+      console.log(`Frames: ${frame + 1}/${totalFrames}`);
+    }
   }
 
   const safeFileName = sanitizeFileName(video.fileName);
   const outputPath = join(outputDir, safeFileName);
   const ffmpeg = spawnSync('ffmpeg', [
-    '-y', '-hide_banner', '-loglevel', 'warning', '-framerate', String(video.sourceFps),
-    '-i', join(framesDir, 'frame-%05d.png'),
-    '-vf', `scale=${video.finalWidth}:${video.finalHeight}:flags=lanczos,fps=${video.outputFps},format=yuv420p`,
-    '-c:v', 'libx264', '-preset', 'medium', '-crf', '19', '-movflags', '+faststart', '-metadata', `title=${config.title}`, outputPath,
+    '-y',
+    '-hide_banner',
+    '-loglevel',
+    'warning',
+    '-framerate',
+    String(video.sourceFps),
+    '-i',
+    join(framesDir, 'frame-%05d.png'),
+    '-vf',
+    `scale=${video.finalWidth}:${video.finalHeight}:flags=lanczos,fps=${video.outputFps},format=yuv420p`,
+    '-c:v',
+    'libx264',
+    '-preset',
+    'medium',
+    '-crf',
+    '19',
+    '-movflags',
+    '+faststart',
+    '-metadata',
+    `title=${config.title}`,
+    outputPath,
   ], { stdio: 'inherit' });
   if (ffmpeg.error) throw ffmpeg.error;
   if (ffmpeg.status !== 0) throw new Error(`FFmpeg exited with status ${ffmpeg.status}`);
 
   writeFileSync(join(outputDir, 'simulation-summary.json'), `${JSON.stringify({
-    generatedAt: new Date().toISOString(), sourceConfig: basename(configPath), video: { ...video, outputPath: safeFileName }, scenario: config,
+    generatedAt: new Date().toISOString(),
+    sourceConfig: basename(configPath),
+    video: { ...video, outputPath: safeFileName },
+    scenario: config,
+    selection: { attempts: selection.attempts, selectedSeed: config.seed, dramaScore: selection.score },
     direction: { highlightedMoments: timeline.moments },
-    result: { tick: finalSnapshot.tick, winnerTeam: finalSnapshot.winnerTeam, teams: finalSnapshot.teams, survivors: finalSnapshot.teams.reduce((sum, team) => sum + team.alive, 0), foodRemaining: finalSnapshot.foods.filter((food) => food.available).length, events: finalSnapshot.events },
+    result: {
+      tick: finalSnapshot.tick,
+      winnerTeam: finalSnapshot.winnerTeam,
+      teams: finalSnapshot.teams,
+      survivors: finalSnapshot.teams.reduce((sum, team) => sum + team.alive, 0),
+      foodRemaining: finalSnapshot.foods.filter((food) => food.available).length,
+      totalKills: finalSnapshot.agents.reduce((sum, agent) => sum + (agent.kills ?? 0), 0),
+      totalShares: finalSnapshot.agents.reduce((sum, agent) => sum + (agent.shares ?? 0), 0),
+      totalRescues: finalSnapshot.agents.reduce((sum, agent) => sum + (agent.rescues ?? 0), 0),
+      events: finalSnapshot.events,
+    },
   }, null, 2)}\n`);
   if (process.env.SIM_BASE_KEEP_FRAMES !== 'true') rmSync(framesDir, { recursive: true, force: true });
   console.log(`Video generated: ${outputPath}`);
@@ -83,15 +125,31 @@ function normalize(input: VideoSettings): Required<VideoSettings> {
   const introSeconds = clamp(input.introSeconds ?? 2, 0, durationSeconds - 2);
   const resultSeconds = clamp(input.resultSeconds ?? 3, 1, durationSeconds - introSeconds - 1);
   return {
-    durationSeconds, introSeconds, resultSeconds, sourceFps,
+    durationSeconds,
+    introSeconds,
+    resultSeconds,
+    sourceFps,
     outputFps: clampInt(input.outputFps ?? 30, sourceFps, 60),
-    renderWidth: clampInt(input.renderWidth ?? 540, 360, 1080), renderHeight: clampInt(input.renderHeight ?? 960, 640, 1920),
-    finalWidth: clampInt(input.finalWidth ?? 1080, 360, 2160), finalHeight: clampInt(input.finalHeight ?? 1920, 640, 3840),
+    renderWidth: clampInt(input.renderWidth ?? 540, 360, 1080),
+    renderHeight: clampInt(input.renderHeight ?? 960, 640, 1920),
+    finalWidth: clampInt(input.finalWidth ?? 1080, 360, 2160),
+    finalHeight: clampInt(input.finalHeight ?? 1920, 640, 3840),
     fileName: input.fileName ?? 'sim-base.mp4',
+    selectionAttempts: clampInt(input.selectionAttempts ?? 6, 1, 12),
   };
 }
-function sanitizeFileName(fileName: string): string { const normalized = fileName.replace(/[^a-zA-Z0-9._-]/g, '-'); return normalized.toLowerCase().endsWith('.mp4') ? normalized : `${normalized}.mp4`; }
-function clamp(value: number, min: number, max: number): number { return Math.min(max, Math.max(min, Number(value))); }
-function clampInt(value: number, min: number, max: number): number { return Math.round(clamp(value, min, max)); }
+
+function sanitizeFileName(fileName: string): string {
+  const normalized = fileName.replace(/[^a-zA-Z0-9._-]/g, '-');
+  return normalized.toLowerCase().endsWith('.mp4') ? normalized : `${normalized}.mp4`;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, Number(value)));
+}
+
+function clampInt(value: number, min: number, max: number): number {
+  return Math.round(clamp(value, min, max));
+}
 
 await main();
