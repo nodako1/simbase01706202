@@ -100,7 +100,7 @@ async function main(): Promise<void> {
   process.env.SIM_BASE_VIDEO_CONFIG = generatedConfigPath;
 
   try {
-    await import('./generate-video.ts');
+    await import('./generate-video-quality.ts');
 
     const temporaryVideoPath = join(outputDir, temporaryFileName);
     const finalVideoPath = join(outputDir, finalFileName);
