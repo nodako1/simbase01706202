@@ -5,7 +5,7 @@
     "population": 100,
     "teams": 4,
     "foodCount": 80,
-    "simulationTicks": 1200,
+    "simulationTicks": 800,
     "ticksPerSecond": 20,
     "playbackSpeed": 4,
     "hungerDrainPerTick": 0.12,
@@ -25,6 +25,7 @@
     "renderWidth": 540,
     "renderHeight": 960,
     "finalWidth": 1080,
-    "finalHeight": 1920
+    "finalHeight": 1920,
+    "selectionAttempts": 6
   }
 }

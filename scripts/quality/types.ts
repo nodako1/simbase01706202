@@ -1,7 +1,16 @@
-import type { SimulationSnapshot, Vec2 } from '../../src/types';
+import type { SimulationConfig, SimulationSnapshot, Vec2 } from '../../src/types';
 
 export type Phase = 'intro' | 'simulation' | 'result';
-export type CueKind = 'leader' | 'danger' | 'milestone' | 'collapse' | 'resource' | 'finale';
+export type CueKind =
+  | 'leader'
+  | 'danger'
+  | 'milestone'
+  | 'collapse'
+  | 'resource'
+  | 'combat'
+  | 'cooperation'
+  | 'hero'
+  | 'finale';
 
 export type TimelineMoment = {
   tick: number;
@@ -16,6 +25,13 @@ export type Timeline = {
   snapshots: SimulationSnapshot[];
   moments: TimelineMoment[];
   finalTick: number;
+};
+
+export type TimelineSelection = {
+  timeline: Timeline;
+  config: SimulationConfig;
+  score: number;
+  attempts: number;
 };
 
 export type DirectorFrame = {
@@ -39,4 +55,5 @@ export type VideoSettings = {
   finalWidth?: number;
   finalHeight?: number;
   fileName?: string;
+  selectionAttempts?: number;
 };

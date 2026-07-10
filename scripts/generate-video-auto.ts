@@ -27,27 +27,27 @@ function buildVideoTitle(input: Partial<SimulationConfig>): string {
 
   if (specialRule === 'sinking_island') {
     candidates.push(
-      `${population}人を沈む島に放置した結果…`,
-      `沈む島で${population}人は何人生き残る？`,
-      `島が沈んだら${population}人は全滅する？`,
+      `沈む島で${population}人が戦った結果…`,
+      `${population}人の中に英雄${teams}人、沈む島の結末`,
+      `逃げ場ゼロの島で最後に残るのは？`,
     );
   } else if (foodRatio <= 0.3) {
     candidates.push(
-      `${population}人に食料${foodCount}個だけ与えた結果…`,
+      `${population}人に食料${foodCount}個、奪い合った結果…`,
       `食料${foodCount}個を${population}人で奪い合うと？`,
-      `${population}人vs食料${foodCount}個、生き残るのは？`,
+      `英雄${teams}人vs食料不足、生き残るのは？`,
     );
   } else if (teams >= 2) {
     candidates.push(
-      `${population}人を${teams}チームに分けた結果…`,
-      `${teams}チーム${population}人、生き残るのは？`,
-      `${population}人のサバイバル、最強チーム決定`,
+      `${population}人を${teams}チームで戦わせた結果…`,
+      `英雄率いる${teams}チーム、最強はどこ？`,
+      `${population}人の生存戦争、最後の勝者は？`,
     );
   } else {
     candidates.push(
       `${population}人を小さな世界に放置した結果…`,
       `${population}人だけの世界、生き残るのは？`,
-      `食料を求める${population}人、最後の結末`,
+      `戦うか助けるか、${population}人の最後の結末`,
     );
   }
 

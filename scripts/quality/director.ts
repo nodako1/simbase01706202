@@ -1,5 +1,5 @@
 import type { SimulationConfig, SimulationSnapshot } from '../../src/types';
-import { endangered, leader } from './timeline';
+import { endangered, leader, topPerformer } from './timeline';
 import type { DirectorFrame, Phase, TimelineMoment } from './types';
 
 export class AutoDirector {
@@ -24,9 +24,18 @@ export class AutoDirector {
     const alive = aliveAgents.length;
     let focusAgentId = this.activeCue?.focusAgentId ?? null;
     if (focusAgentId !== null && !aliveAgents.some((agent) => agent.id === focusAgentId)) focusAgentId = null;
-    if (focusAgentId === null && alive <= 12) focusAgentId = endangered(snapshot)?.id ?? null;
+
+    if (focusAgentId === null && alive <= 16) {
+      focusAgentId = topPerformer(snapshot)?.id ?? endangered(snapshot)?.id ?? null;
+    }
+    if (focusAgentId === null && this.activeCue?.kind === 'cooperation') {
+      focusAgentId = [...aliveAgents].sort((a, b) => ((b.shares ?? 0) + (b.rescues ?? 0)) - ((a.shares ?? 0) + (a.rescues ?? 0)))[0]?.id ?? null;
+    }
+
     const focus = focusAgentId === null ? undefined : aliveAgents.find((agent) => agent.id === focusAgentId);
-    const urgency = phase === 'result' ? 1 : clamp01((20 - alive) / 20);
+    const urgency = phase === 'result' ? 1 : clamp01((24 - alive) / 24);
+    const dramaticCue = this.activeCue?.kind === 'combat' || this.activeCue?.kind === 'hero';
+    const cooperationCue = this.activeCue?.kind === 'cooperation';
 
     this.previousTick = snapshot.tick;
     return {
@@ -34,7 +43,11 @@ export class AutoDirector {
       cueProgress: this.activeCue ? this.remaining / this.total : 0,
       focusAgentId,
       leaderTeam: leader(snapshot.teams).team,
-      zoom: phase === 'simulation' ? (focus ? 1.42 + urgency * 0.18 : 1 + urgency * 0.18) : 1,
+      zoom: phase === 'simulation'
+        ? focus
+          ? dramaticCue ? 1.72 : cooperationCue ? 1.58 : 1.42 + urgency * 0.18
+          : 1 + urgency * 0.18
+        : 1,
       cameraCenter: focus?.position ?? { x: this.config.worldWidth / 2, y: this.config.worldHeight / 2 },
       urgency,
     };
@@ -51,7 +64,8 @@ export class AutoDirector {
   private activate(moment: TimelineMoment): void {
     if (this.activeCue && this.activeCue.score > moment.score && this.remaining > this.sourceFps * 0.45) return;
     this.activeCue = moment;
-    this.total = Math.max(10, Math.round(this.sourceFps * (moment.score >= 8 ? 1.75 : 1.25)));
+    const multiplier = moment.kind === 'combat' || moment.kind === 'hero' ? 2.05 : moment.kind === 'cooperation' ? 1.7 : moment.score >= 8 ? 1.75 : 1.25;
+    this.total = Math.max(10, Math.round(this.sourceFps * multiplier));
     this.remaining = this.total;
   }
 }
