@@ -88,5 +88,6 @@ function compactDistanceAccurate(distanceKm: number): string {
   if (distanceKm < 1_000_000) return `${Math.round(distanceKm).toLocaleString('ja-JP')}km`;
   if (distanceKm < 100_000_000) return `${Math.round(distanceKm / 10_000).toLocaleString('ja-JP')}万km`;
   if (distanceKm < 1_000_000_000) return `${(distanceKm / 100_000_000).toFixed(1)}億km`;
-  return `${(distanceKm / 1_000_000_000).toFixed(2)}兆km`;
+  if (distanceKm < 1_000_000_000_000) return `${(distanceKm / 100_000_000).toFixed(1)}億km`;
+  return `${(distanceKm / 1_000_000_000_000).toFixed(2)}兆km`;
 }
