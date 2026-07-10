@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createCanvas } from '@napi-rs/canvas';
 import { sanitizeConfig } from '../src/config';
 import { Simulation } from '../src/simulation';
@@ -27,173 +28,12 @@ type VideoJob = {
 };
 
 const TEAM_COLORS = ['#2dd4bf', '#fb7185', '#60a5fa', '#fbbf24', '#c084fc', '#4ade80', '#fb923c', '#e879f9'];
-const rootDir = resolve(import.meta.dirname, '..');
-const configPath = resolve(process.env.SIM_BASE_VIDEO_CONFIG ?? join(rootDir, 'video.config.json'));
-const outputDir = resolve(process.env.SIM_BASE_OUTPUT_DIR ?? join(rootDir, 'output'));
-const framesDir = resolve(process.env.SIM_BASE_FRAMES_DIR ?? join(rootDir, '.simbase-frames'));
-
-if (!existsSync(configPath)) {
-  throw new Error(`Video config was not found: ${configPath}`);
-}
-
-const job = JSON.parse(readFileSync(configPath, 'utf8')) as VideoJob;
-const video = normalizeVideoSettings(job.video ?? {});
-const config = sanitizeConfig({
-  ...job.scenario,
-  videoWidth: video.renderWidth,
-  videoHeight: video.renderHeight,
-  framesPerSecond: video.sourceFps,
-});
-
-mkdirSync(outputDir, { recursive: true });
-rmSync(framesDir, { recursive: true, force: true });
-mkdirSync(framesDir, { recursive: true });
-
-const canvas = createCanvas(video.renderWidth, video.renderHeight);
-const ctx = canvas.getContext('2d');
-const renderer = new HeadlessRenderer(ctx, video.renderWidth, video.renderHeight, config);
-const simulation = new Simulation(config);
-
-const totalFrames = Math.round(video.durationSeconds * video.sourceFps);
-const introFrames = Math.round(video.introSeconds * video.sourceFps);
-const resultFrames = Math.round(video.resultSeconds * video.sourceFps);
-const simulationFrames = Math.max(1, totalFrames - introFrames - resultFrames);
-let snapshot = simulation.getSnapshot();
-
-console.log(`Generating ${totalFrames} frames (${video.renderWidth}x${video.renderHeight} @ ${video.sourceFps}fps)`);
-
-for (let frame = 0; frame < totalFrames; frame += 1) {
-  let phase: Phase = 'intro';
-
-  if (frame >= introFrames && frame < introFrames + simulationFrames) {
-    phase = 'simulation';
-    if (snapshot.status === 'idle') simulation.start();
-
-    const simulationFrame = frame - introFrames + 1;
-    const targetTick = Math.min(
-      config.simulationTicks,
-      Math.ceil((simulationFrame / simulationFrames) * config.simulationTicks),
-    );
-
-    while (snapshot.tick < targetTick && snapshot.status === 'running') {
-      simulation.step();
-      snapshot = simulation.getSnapshot();
-    }
-  } else if (frame >= introFrames + simulationFrames) {
-    phase = 'result';
-    if (snapshot.status === 'idle') simulation.start();
-    while (snapshot.status === 'running') {
-      simulation.step();
-      snapshot = simulation.getSnapshot();
-    }
-  }
-
-  renderer.render(snapshot, phase);
-  const framePath = join(framesDir, `frame-${String(frame).padStart(5, '0')}.png`);
-  const png = await canvas.encode('png');
-  writeFileSync(framePath, png);
-
-  if ((frame + 1) % Math.max(1, Math.floor(totalFrames / 10)) === 0 || frame === totalFrames - 1) {
-    console.log(`Frames: ${frame + 1}/${totalFrames}`);
-  }
-}
-
-const safeFileName = sanitizeFileName(video.fileName);
-const outputPath = join(outputDir, safeFileName);
-const ffmpegArgs = [
-  '-y',
-  '-hide_banner',
-  '-loglevel',
-  'warning',
-  '-framerate',
-  String(video.sourceFps),
-  '-i',
-  join(framesDir, 'frame-%05d.png'),
-  '-vf',
-  `scale=${video.finalWidth}:${video.finalHeight}:flags=lanczos,fps=${video.outputFps},format=yuv420p`,
-  '-c:v',
-  'libx264',
-  '-preset',
-  'medium',
-  '-crf',
-  '20',
-  '-movflags',
-  '+faststart',
-  '-metadata',
-  `title=${config.title}`,
-  outputPath,
-];
-
-console.log('Encoding MP4 with FFmpeg...');
-const ffmpeg = spawnSync('ffmpeg', ffmpegArgs, { stdio: 'inherit' });
-if (ffmpeg.error) throw ffmpeg.error;
-if (ffmpeg.status !== 0) throw new Error(`FFmpeg exited with status ${ffmpeg.status}`);
-
-const summary = {
-  generatedAt: new Date().toISOString(),
-  sourceConfig: basename(configPath),
-  video: {
-    ...video,
-    outputPath: safeFileName,
-  },
-  scenario: config,
-  result: {
-    tick: snapshot.tick,
-    winnerTeam: snapshot.winnerTeam,
-    teams: snapshot.teams,
-    survivors: snapshot.teams.reduce((sum, team) => sum + team.alive, 0),
-    foodRemaining: snapshot.foods.filter((food) => food.available).length,
-    events: snapshot.events,
-  },
-};
-
-writeFileSync(join(outputDir, 'simulation-summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
-
-if (process.env.SIM_BASE_KEEP_FRAMES !== 'true') {
-  rmSync(framesDir, { recursive: true, force: true });
-}
-
-console.log(`Video generated: ${outputPath}`);
-console.log(`Summary generated: ${join(outputDir, 'simulation-summary.json')}`);
-
-function normalizeVideoSettings(input: VideoSettings): Required<VideoSettings> {
-  const sourceFps = clampInt(input.sourceFps ?? 15, 5, 30);
-  const durationSeconds = clamp(input.durationSeconds ?? 30, 8, 60);
-  const introSeconds = clamp(input.introSeconds ?? 2, 0, durationSeconds - 2);
-  const resultSeconds = clamp(input.resultSeconds ?? 3, 1, durationSeconds - introSeconds - 1);
-
-  return {
-    durationSeconds,
-    introSeconds,
-    resultSeconds,
-    sourceFps,
-    outputFps: clampInt(input.outputFps ?? 30, sourceFps, 60),
-    renderWidth: clampInt(input.renderWidth ?? 540, 360, 1080),
-    renderHeight: clampInt(input.renderHeight ?? 960, 640, 1920),
-    finalWidth: clampInt(input.finalWidth ?? 1080, 360, 2160),
-    finalHeight: clampInt(input.finalHeight ?? 1920, 640, 3840),
-    fileName: input.fileName ?? 'sim-base.mp4',
-  };
-}
-
-function sanitizeFileName(fileName: string): string {
-  const normalized = fileName.replace(/[^a-zA-Z0-9._-]/g, '-');
-  return normalized.toLowerCase().endsWith('.mp4') ? normalized : `${normalized}.mp4`;
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, Number(value)));
-}
-
-function clampInt(value: number, min: number, max: number): number {
-  return Math.round(clamp(value, min, max));
-}
 
 class HeadlessRenderer {
   private readonly mapRect: { x: number; y: number; width: number; height: number };
 
   constructor(
-    private readonly ctx: ReturnType<ReturnType<typeof createCanvas>['getContext']>,
+    private readonly ctx: any,
     private readonly width: number,
     private readonly height: number,
     private readonly config: SimulationConfig,
@@ -212,7 +52,6 @@ class HeadlessRenderer {
     this.drawMap(snapshot);
     this.drawHud(snapshot);
     this.drawLatestEvent(snapshot);
-
     if (phase === 'intro') this.drawIntro();
     if (phase === 'result') this.drawResult(snapshot);
   }
@@ -255,7 +94,14 @@ class HeadlessRenderer {
     this.roundedRectPath(x, y, width, height, 20);
     this.ctx.clip();
 
-    const water = this.ctx.createRadialGradient(x + width / 2, y + height / 2, width * 0.05, x + width / 2, y + height / 2, width * 0.68);
+    const water = this.ctx.createRadialGradient(
+      x + width / 2,
+      y + height / 2,
+      width * 0.05,
+      x + width / 2,
+      y + height / 2,
+      width * 0.68,
+    );
     water.addColorStop(0, '#0e7490');
     water.addColorStop(1, '#082f49');
     this.ctx.fillStyle = water;
@@ -263,7 +109,14 @@ class HeadlessRenderer {
 
     const islandWidth = width * 0.93 * snapshot.safeRadius;
     const islandHeight = height * 0.93 * snapshot.safeRadius;
-    const land = this.ctx.createRadialGradient(x + width / 2, y + height / 2, 0, x + width / 2, y + height / 2, Math.max(islandWidth, islandHeight) / 2);
+    const land = this.ctx.createRadialGradient(
+      x + width / 2,
+      y + height / 2,
+      0,
+      x + width / 2,
+      y + height / 2,
+      Math.max(islandWidth, islandHeight) / 2,
+    );
     land.addColorStop(0, '#365314');
     land.addColorStop(0.72, '#3f6212');
     land.addColorStop(0.9, '#a16207');
@@ -326,7 +179,6 @@ class HeadlessRenderer {
     this.ctx.fillText(String(alive), this.width * 0.06, hudY + this.height * 0.041);
     this.ctx.fillText(String(food), this.width * 0.39, hudY + this.height * 0.041);
     this.ctx.fillText(`${snapshot.elapsedSeconds.toFixed(1)}s`, this.width * 0.67, hudY + this.height * 0.041);
-
     this.drawTeamBars(snapshot.teams, this.height * 0.905);
   }
 
@@ -439,3 +291,158 @@ class HeadlessRenderer {
     this.ctx.closePath();
   }
 }
+
+function normalizeVideoSettings(input: VideoSettings): Required<VideoSettings> {
+  const sourceFps = clampInt(input.sourceFps ?? 15, 5, 30);
+  const durationSeconds = clamp(input.durationSeconds ?? 30, 8, 60);
+  const introSeconds = clamp(input.introSeconds ?? 2, 0, durationSeconds - 2);
+  const resultSeconds = clamp(input.resultSeconds ?? 3, 1, durationSeconds - introSeconds - 1);
+
+  return {
+    durationSeconds,
+    introSeconds,
+    resultSeconds,
+    sourceFps,
+    outputFps: clampInt(input.outputFps ?? 30, sourceFps, 60),
+    renderWidth: clampInt(input.renderWidth ?? 540, 360, 1080),
+    renderHeight: clampInt(input.renderHeight ?? 960, 640, 1920),
+    finalWidth: clampInt(input.finalWidth ?? 1080, 360, 2160),
+    finalHeight: clampInt(input.finalHeight ?? 1920, 640, 3840),
+    fileName: input.fileName ?? 'sim-base.mp4',
+  };
+}
+
+function sanitizeFileName(fileName: string): string {
+  const normalized = fileName.replace(/[^a-zA-Z0-9._-]/g, '-');
+  return normalized.toLowerCase().endsWith('.mp4') ? normalized : `${normalized}.mp4`;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, Number(value)));
+}
+
+function clampInt(value: number, min: number, max: number): number {
+  return Math.round(clamp(value, min, max));
+}
+
+async function main(): Promise<void> {
+  const rootDir = resolve(fileURLToPath(new URL('..', import.meta.url)));
+  const configPath = resolve(process.env.SIM_BASE_VIDEO_CONFIG ?? join(rootDir, 'video.config.json'));
+  const outputDir = resolve(process.env.SIM_BASE_OUTPUT_DIR ?? join(rootDir, 'output'));
+  const framesDir = resolve(process.env.SIM_BASE_FRAMES_DIR ?? join(rootDir, '.simbase-frames'));
+
+  if (!existsSync(configPath)) throw new Error(`Video config was not found: ${configPath}`);
+
+  const job = JSON.parse(readFileSync(configPath, 'utf8')) as VideoJob;
+  const video = normalizeVideoSettings(job.video ?? {});
+  const config = sanitizeConfig({
+    ...job.scenario,
+    videoWidth: video.renderWidth,
+    videoHeight: video.renderHeight,
+    framesPerSecond: video.sourceFps,
+  });
+
+  mkdirSync(outputDir, { recursive: true });
+  rmSync(framesDir, { recursive: true, force: true });
+  mkdirSync(framesDir, { recursive: true });
+
+  const canvas = createCanvas(video.renderWidth, video.renderHeight);
+  const ctx = canvas.getContext('2d');
+  const renderer = new HeadlessRenderer(ctx, video.renderWidth, video.renderHeight, config);
+  const simulation = new Simulation(config);
+
+  const totalFrames = Math.round(video.durationSeconds * video.sourceFps);
+  const introFrames = Math.round(video.introSeconds * video.sourceFps);
+  const resultFrames = Math.round(video.resultSeconds * video.sourceFps);
+  const simulationFrames = Math.max(1, totalFrames - introFrames - resultFrames);
+  let snapshot = simulation.getSnapshot();
+
+  console.log(`Generating ${totalFrames} frames (${video.renderWidth}x${video.renderHeight} @ ${video.sourceFps}fps)`);
+
+  for (let frame = 0; frame < totalFrames; frame += 1) {
+    let phase: Phase = 'intro';
+
+    if (frame >= introFrames && frame < introFrames + simulationFrames) {
+      phase = 'simulation';
+      if (snapshot.status === 'idle') simulation.start();
+      const simulationFrame = frame - introFrames + 1;
+      const targetTick = Math.min(
+        config.simulationTicks,
+        Math.ceil((simulationFrame / simulationFrames) * config.simulationTicks),
+      );
+      while (snapshot.tick < targetTick && snapshot.status === 'running') {
+        simulation.step();
+        snapshot = simulation.getSnapshot();
+      }
+    } else if (frame >= introFrames + simulationFrames) {
+      phase = 'result';
+      if (snapshot.status === 'idle') simulation.start();
+      while (snapshot.status === 'running') {
+        simulation.step();
+        snapshot = simulation.getSnapshot();
+      }
+    }
+
+    renderer.render(snapshot, phase);
+    const framePath = join(framesDir, `frame-${String(frame).padStart(5, '0')}.png`);
+    writeFileSync(framePath, await canvas.encode('png'));
+
+    if ((frame + 1) % Math.max(1, Math.floor(totalFrames / 10)) === 0 || frame === totalFrames - 1) {
+      console.log(`Frames: ${frame + 1}/${totalFrames}`);
+    }
+  }
+
+  const safeFileName = sanitizeFileName(video.fileName);
+  const outputPath = join(outputDir, safeFileName);
+  const ffmpegArgs = [
+    '-y',
+    '-hide_banner',
+    '-loglevel',
+    'warning',
+    '-framerate',
+    String(video.sourceFps),
+    '-i',
+    join(framesDir, 'frame-%05d.png'),
+    '-vf',
+    `scale=${video.finalWidth}:${video.finalHeight}:flags=lanczos,fps=${video.outputFps},format=yuv420p`,
+    '-c:v',
+    'libx264',
+    '-preset',
+    'medium',
+    '-crf',
+    '20',
+    '-movflags',
+    '+faststart',
+    '-metadata',
+    `title=${config.title}`,
+    outputPath,
+  ];
+
+  console.log('Encoding MP4 with FFmpeg...');
+  const ffmpeg = spawnSync('ffmpeg', ffmpegArgs, { stdio: 'inherit' });
+  if (ffmpeg.error) throw ffmpeg.error;
+  if (ffmpeg.status !== 0) throw new Error(`FFmpeg exited with status ${ffmpeg.status}`);
+
+  const summary = {
+    generatedAt: new Date().toISOString(),
+    sourceConfig: basename(configPath),
+    video: { ...video, outputPath: safeFileName },
+    scenario: config,
+    result: {
+      tick: snapshot.tick,
+      winnerTeam: snapshot.winnerTeam,
+      teams: snapshot.teams,
+      survivors: snapshot.teams.reduce((sum, team) => sum + team.alive, 0),
+      foodRemaining: snapshot.foods.filter((food) => food.available).length,
+      events: snapshot.events,
+    },
+  };
+
+  writeFileSync(join(outputDir, 'simulation-summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
+  if (process.env.SIM_BASE_KEEP_FRAMES !== 'true') rmSync(framesDir, { recursive: true, force: true });
+
+  console.log(`Video generated: ${outputPath}`);
+  console.log(`Summary generated: ${join(outputDir, 'simulation-summary.json')}`);
+}
+
+await main();
